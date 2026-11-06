@@ -35,7 +35,7 @@ function cleanHTML(html, isFaceit = false) {
   let text = typeof html === 'string' ? html : 
              (html._ || html['#text'] || html.content || JSON.stringify(html));
   
-  // 0. CRÍTICO: Normalizar TODOS los saltos de línea a \n (evita problemas con \r\n de DeepL/Windows)
+  // 0. CRÍTICO: Normalizar TODOS los saltos de línea a \n (evita problemas con \r\n)
   text = text.replace(/\r?\n/g, '\n');
 
   if (isFaceit) {
@@ -46,7 +46,7 @@ function cleanHTML(html, isFaceit = false) {
       // 2. HTML básico
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<li>/gi, '\n* ')
-      .replace(/<\/li>/gi, '')
+      .replace(/<\/li>/gi, '') // Sin salto extra al cerrar
       .replace(/<\/?ul>/gi, '')
       .replace(/<\/?ol>/gi, '')
       .replace(/<[^>]+>/g, '')
@@ -57,7 +57,7 @@ function cleanHTML(html, isFaceit = false) {
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
-      // 4. COLAPSAR TODOS los saltos de línea múltiples a uno solo (diseño compacto)
+      // 4. COLAPSAR TODOS los saltos de línea múltiples a uno solo (diseño 100% compacto)
       .replace(/\n{2,}/g, '\n')
       .trim();
   } else {
@@ -66,7 +66,7 @@ function cleanHTML(html, isFaceit = false) {
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/p>/gi, '\n')
       .replace(/<li>/gi, '\n* ')
-      .replace(/<\/li>/gi, '\n')
+      .replace(/<\/li>/gi, '') // CRÍTICO: No añadir salto después de </li>
       .replace(/<\/?ul>/gi, '\n')
       .replace(/<\/?ol>/gi, '\n')
       .replace(/<[^>]+>/g, '')
@@ -77,15 +77,14 @@ function cleanHTML(html, isFaceit = false) {
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
-      // 3. Headers: [ JUGABILIDAD ] -> \n\n**JUGABILIDAD**\n\n (Garantiza salto antes y después)
+      // 3. Headers: [ JUGABILIDAD ] -> \n\n**JUGABILIDAD**\n\n
       .replace(/\[\s*([^\]]+?)\s*\]/g, '\n\n**$1**\n\n')
       // 4. Limpiar viñetas huérfanas (líneas que son solo "*")
       .replace(/^\s*\*\s*$/gm, '')
       // 5. Normalizar saltos: máximo doble salto (\n\n) en todo el texto
       .replace(/\n{3,}/g, '\n\n')
-      // 6. CRÍTICO: Eliminar saltos de línea DOBLES ENTRE viñetas de una misma lista
-      // Busca: (salto + asterisco + texto) seguido de 2+ saltos y otro asterisco
-      .replace(/(\n\* [^\n]*)\n{2,}(\* )/g, '$1\n$2')
+      // 6. CRÍTICO: Compactar listas. Si hay 2 o más saltos de línea antes de un asterisco, reducirlo a 1.
+      .replace(/\n{2,}(\* )/g, '\n$1')
       // 7. Limpieza final de saltos al inicio y final
       .replace(/^\n+|\n+$/g, '')
       .trim();
@@ -176,8 +175,11 @@ async function processFeed(name, url, webhook, isFaceit = false) {
       title = translated.title;
       description = translated.description;
       
-      // GARANTÍA: Forzar formato compacto DESPUÉS de la traducción por si DeepL añade saltos extra (\r\n o \n\n)
-      description = description.replace(/\r?\n{2,}/g, '\n').trim();
+      // GARANTÍA ABSOLUTA: Forzar formato compacto DESPUÉS de la traducción por si DeepL añade saltos extra
+      description = description
+        .replace(/\r\n/g, '\n')
+        .replace(/\n{2,}/g, '\n')
+        .trim();
       
       console.log(`[${name}] Traducción completada`);
     }
