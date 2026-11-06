@@ -175,10 +175,11 @@ async function processFeed(name, url, webhook, isFaceit = false) {
       title = translated.title;
       description = translated.description;
       
-      // GARANTÍA ABSOLUTA: Forzar formato compacto DESPUÉS de la traducción por si DeepL añade saltos extra
+      // GARANTÍA ABSOLUTA: Forzar formato compacto DESPUÉS de la traducción
       description = description
-        .replace(/\r\n/g, '\n')
-        .replace(/\n{2,}/g, '\n')
+        .replace(/\r\n/g, '\n')                    // Normalizar saltos Windows
+        .replace(/\n\s*\n/g, '\n')                 // Colapsar saltos con espacios intermedios
+        .replace(/\n+(\* )/g, '\n$1')              // Asegurar solo UN salto antes de cada viñeta
         .trim();
       
       console.log(`[${name}] Traducción completada`);
