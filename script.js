@@ -32,30 +32,44 @@ async function sendDiscord(webhookUrl, embed) {
 function cleanHTML(html) {
   if (!html) return '';
   
-  // Manejar objetos del RSS (algunos parsers devuelven objetos)
-  let text = '';
-  if (typeof html === 'string') {
-    text = html;
-  } else if (typeof html === 'object') {
-    // Extraer texto de objetos RSS
-    if (html._) text = html._;
-    else if (html['#text']) text = html['#text'];
-    else if (html.content) text = html.content;
-    else text = JSON.stringify(html);
-  } else {
-    text = String(html);
-  }
+  // 1. Extraer texto de objetos RSS si es necesario
+  let text = typeof html === 'string' ? html : 
+             (html._ || html['#text'] || html.content || JSON.stringify(html));
   
   return text
+    // 2. Normalizar saltos de línea de etiquetas (un solo salto)
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/p>/gi, '\n')
     .replace(/<\/li>/gi, '\n- ')
+    .replace(/<li>/gi, '')
+    .replace(/<\/ul>/gi, '\n')
+    .replace(/<\/ol>/gi, '\n')
+    
+    // 3. Eliminar resto de etiquetas HTML
     .replace(/<[^>]+>/g, '')
+    
+    // 4. Decodificar entidades HTML
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
-    .replace(/\n\s*\n\s*\n+/g, '\n\n')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    
+    // 5. Formatear headers entre corchetes: [ JUGABILIDAD ] -> **JUGABILIDAD**
+    .replace(/\[\s*([^\]]+?)\s*\]/g, '**$1**')
+    
+    // 6. Limpiar viñetas vacías o sueltas (evita el "-" huérfano)
+    .replace(/^\s*-\s*$/gm, '') 
+    .replace(/\n\s*-\s*\n/g, '\n- ') 
+    
+    // 7. Colapsar saltos de línea excesivos y compactar listas
+    .replace(/\n{3,}/g, '\n\n') // Máximo doble salto entre secciones
+    .replace(/\n\n(?=- )/g, '\n') // Quitar doble salto ANTES de una viñeta
+    .replace(/(?<=- [^\n]+)\n{2,}/g, '\n') // Quitar doble salto DESPUÉS de una viñeta
+    
+    // 8. Limpieza final
+    .replace(/^\n+|\n+$/g, '')
     .trim();
 }
 
