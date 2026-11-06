@@ -39,10 +39,10 @@ function cleanHTML(html) {
   return text
     // 1. Normalizar saltos de línea de etiquetas
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n\n')  // Doble salto después de párrafo
-    .replace(/<\/li>/gi, '\n- ')  // Guion para cada ítem de lista
-    .replace(/<li>/gi, '')
-    .replace(/<\/ul>/gi, '\n\n')  // Doble salto después de lista
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<li>/gi, '\n- ')  // TODOS los <li> se convierten en viñetas
+    .replace(/<\/li>/gi, '')     // Cerrar li sin añadir nada extra
+    .replace(/<\/ul>/gi, '\n\n')
     .replace(/<\/ol>/gi, '\n\n')
     
     // 2. Eliminar resto de etiquetas HTML
@@ -57,16 +57,16 @@ function cleanHTML(html) {
     .replace(/&#39;/g, "'")
     
     // 4. Formatear headers entre corchetes: [ JUGABILIDAD ] -> **JUGABILIDAD**
-    .replace(/\[\s*([^\]]+?)\s*\]/g, '**$1**\n')  // Añadir salto después del header
+    .replace(/\[\s*([^\]]+?)\s*\]/g, '**$1**\n')
     
-    // 5. Limpiar guiones huérfanos (líneas que son solo "-")
+    // 5. Limpiar guiones huérfanos
     .replace(/^\s*-\s*$/gm, '')
     
-    // 6. Colapsar saltos de línea excesivos (máximo doble salto)
+    // 6. Colapsar saltos de línea excesivos
     .replace(/\n{3,}/g, '\n\n')
     
-    // 7. Asegurar que haya un salto de línea ANTES de cada guion de lista
-    .replace(/([^\n])\n- /g, '$1\n\n- ')  // Si no hay salto antes del guion, añadirlo
+    // 7. Asegurar salto antes de viñetas
+    .replace(/([^\n])\n- /g, '$1\n\n- ')
     
     // 8. Limpieza final
     .replace(/^\n+|\n+$/g, '')
