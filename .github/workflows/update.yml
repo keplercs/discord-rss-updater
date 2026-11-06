@@ -5,7 +5,7 @@ on:
     inputs:
       secret_token:
         description: 'Token de seguridad para cron-job.org'
-        required: true
+        required: false
   schedule:
     - cron: '*/5 * * * *'
 
