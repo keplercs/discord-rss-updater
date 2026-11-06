@@ -32,23 +32,23 @@ async function sendDiscord(webhookUrl, embed) {
 function cleanHTML(html) {
   if (!html) return '';
   
-  // 1. Extraer texto de objetos RSS si es necesario
+  // Extraer texto de objetos RSS si es necesario
   let text = typeof html === 'string' ? html : 
              (html._ || html['#text'] || html.content || JSON.stringify(html));
   
   return text
-    // 2. Normalizar saltos de línea de etiquetas (un solo salto)
+    // 1. Normalizar saltos de línea de etiquetas
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<\/li>/gi, '\n- ')
+    .replace(/<\/p>/gi, '\n\n')  // Doble salto después de párrafo
+    .replace(/<\/li>/gi, '\n- ')  // Guion para cada ítem de lista
     .replace(/<li>/gi, '')
-    .replace(/<\/ul>/gi, '\n')
-    .replace(/<\/ol>/gi, '\n')
+    .replace(/<\/ul>/gi, '\n\n')  // Doble salto después de lista
+    .replace(/<\/ol>/gi, '\n\n')
     
-    // 3. Eliminar resto de etiquetas HTML
+    // 2. Eliminar resto de etiquetas HTML
     .replace(/<[^>]+>/g, '')
     
-    // 4. Decodificar entidades HTML
+    // 3. Decodificar entidades HTML
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
@@ -56,17 +56,17 @@ function cleanHTML(html) {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     
-    // 5. Formatear headers entre corchetes: [ JUGABILIDAD ] -> **JUGABILIDAD**
-    .replace(/\[\s*([^\]]+?)\s*\]/g, '**$1**')
+    // 4. Formatear headers entre corchetes: [ JUGABILIDAD ] -> **JUGABILIDAD**
+    .replace(/\[\s*([^\]]+?)\s*\]/g, '**$1**\n')  // Añadir salto después del header
     
-    // 6. Limpiar viñetas vacías o sueltas (evita el "-" huérfano)
-    .replace(/^\s*-\s*$/gm, '') 
-    .replace(/\n\s*-\s*\n/g, '\n- ') 
+    // 5. Limpiar guiones huérfanos (líneas que son solo "-")
+    .replace(/^\s*-\s*$/gm, '')
     
-    // 7. Colapsar saltos de línea excesivos y compactar listas
-    .replace(/\n{3,}/g, '\n\n') // Máximo doble salto entre secciones
-    .replace(/\n\n(?=- )/g, '\n') // Quitar doble salto ANTES de una viñeta
-    .replace(/(?<=- [^\n]+)\n{2,}/g, '\n') // Quitar doble salto DESPUÉS de una viñeta
+    // 6. Colapsar saltos de línea excesivos (máximo doble salto)
+    .replace(/\n{3,}/g, '\n\n')
+    
+    // 7. Asegurar que haya un salto de línea ANTES de cada guion de lista
+    .replace(/([^\n])\n- /g, '$1\n\n- ')  // Si no hay salto antes del guion, añadirlo
     
     // 8. Limpieza final
     .replace(/^\n+|\n+$/g, '')
