@@ -3,9 +3,10 @@ const parser = new Parser();
 const fs = require('fs');
 
 const DEEPL_API_KEY = process.env.DEEPL_API_KEY;
-const DEEPL_GLOSSARY_ID = 'b08dfba2-a6dd-478b-a6a3-91f74822e466'; // Del blueprint
+const DEEPL_GLOSSARY_ID = 'b08dfba2-a6dd-478b-a6a3-91f74822e466';
 const WEBHOOK_CS2 = process.env.DISCORD_WEBHOOK_CS2;
 const WEBHOOK_FACEIT = process.env.DISCORD_WEBHOOK_FACEIT;
+const FORCE_SEND = process.env.FORCE_SEND === 'true'; // Nuevo parámetro
 
 async function sendDiscord(webhookUrl, embed) {
   if (!webhookUrl) {
@@ -21,18 +22,31 @@ async function sendDiscord(webhookUrl, embed) {
     if (!res.ok) {
       console.error(`Error Discord: ${res.status} ${res.statusText}`);
     } else {
-      console.log('Mensaje enviado a Discord correctamente');
+      console.log('✓ Mensaje enviado a Discord');
     }
   } catch (err) {
     console.error('Error enviando a Discord:', err);
   }
 }
 
-async function cleanHTML(html) {
+function cleanHTML(html) {
   if (!html) return '';
-  // Si viene como objeto (algunos RSS), extraer texto
-  const text = typeof html === 'object' ? (html._ || html['#text'] || JSON.stringify(html)) : html;
-  return String(text)
+  
+  // Manejar objetos del RSS (algunos parsers devuelven objetos)
+  let text = '';
+  if (typeof html === 'string') {
+    text = html;
+  } else if (typeof html === 'object') {
+    // Extraer texto de objetos RSS
+    if (html._) text = html._;
+    else if (html['#text']) text = html['#text'];
+    else if (html.content) text = html.content;
+    else text = JSON.stringify(html);
+  } else {
+    text = String(html);
+  }
+  
+  return text
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n\n')
     .replace(/<\/li>/gi, '\n- ')
@@ -45,7 +59,6 @@ async function cleanHTML(html) {
     .trim();
 }
 
-// Replica exacta del blueprint: envía "título|||\ndescripción" y hace split después
 async function translateFaceitContent(title, description) {
   if (!DEEPL_API_KEY) {
     console.log('Sin DEEPL_API_KEY, omitiendo traducción');
@@ -53,7 +66,7 @@ async function translateFaceitContent(title, description) {
   }
   
   const combinedText = `${title}|||\n${description}`;
-  console.log('Enviando a DeepL:', combinedText.substring(0, 100) + '...');
+  console.log('Enviando a DeepL (primeros 100 chars):', combinedText.substring(0, 100));
   
   try {
     const res = await fetch('https://api-free.deepl.com/v2/translate', {
@@ -67,7 +80,6 @@ async function translateFaceitContent(title, description) {
         target_lang: 'ES',
         source_lang: 'EN',
         glossary_id: DEEPL_GLOSSARY_ID,
-        tag_handling: 'html',
         preserve_formatting: 'true'
       })
     });
@@ -79,10 +91,11 @@ async function translateFaceitContent(title, description) {
     }
     
     const data = await res.json();
-    const translated = data.translations[0].text;
+    console.log('Respuesta DeepL recibida');
     
-    // Split igual que Make: {{get(split(3.translations[].text; "|||"); 1)}} y 2
+    const translated = data.translations[0].text;
     const parts = translated.split('|||\n');
+    
     return {
       title: parts[0] || title,
       description: parts[1] || description
@@ -107,27 +120,35 @@ async function processFeed(name, url, webhook, isFaceit = false) {
     }
     
     const currentId = item.guid || item.link;
-    if (currentId === lastSeen) {
-      console.log(`[${name}] Sin novedades (mismo guid: ${currentId})`);
+    
+    // Si FORCE_SEND=true, ignorar el last_seen
+    if (currentId === lastSeen && !FORCE_SEND) {
+      console.log(`[${name}] Sin novedades (mismo guid)`);
       return;
     }
 
-    console.log(`[${name}] Nueva actualización: ${item.title}`);
-    fs.writeFileSync(lastSeenFile, currentId);
+    console.log(`[${name}] Procesando: ${item.title}`);
+    
+    // Solo actualizar last_seen si no es force send
+    if (!FORCE_SEND) {
+      fs.writeFileSync(lastSeenFile, currentId);
+    }
 
     let title = item.title || '';
     let description = cleanHTML(item.content || item.contentSnippet || item.description);
+    
+    console.log(`[${name}] Descripción limpia (primeros 100 chars):`, description.substring(0, 100));
 
     if (isFaceit) {
       console.log(`[${name}] Traduciendo con glosario...`);
       const translated = await translateFaceitContent(title, description);
       title = translated.title;
       description = translated.description;
+      console.log(`[${name}] Traducción completada`);
     }
 
     const embed = {
       title: title,
-      // SIN url aquí para que el título no sea clickeable (el autor ya tiene el link)
       description: description,
       color: isFaceit ? 16733440 : 2636413,
       image: {
@@ -151,8 +172,13 @@ async function processFeed(name, url, webhook, isFaceit = false) {
 }
 
 async function main() {
+  console.log('=== Iniciando RSS Updater ===');
+  console.log('FORCE_SEND:', FORCE_SEND);
+  
   await processFeed('cs2', 'https://store.steampowered.com/feeds/news/app/730/?l=spanish', WEBHOOK_CS2, false);
   await processFeed('faceit', 'https://www.faceitstatus.com/feed.rss', WEBHOOK_FACEIT, true);
+  
+  console.log('=== Proceso completado ===');
 }
 
 main().catch(console.error);
