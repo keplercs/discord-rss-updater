@@ -6,20 +6,28 @@ on:
       secret_token:
         description: 'Token de seguridad para cron-job.org'
         required: false
+      force_send:
+        description: 'Forzar envío (ignorar last_seen)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
   schedule:
     - cron: '*/5 * * * *'
 
 permissions:
-  contents: write # <-- Esto permite hacer git push
+  contents: write
 
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - name: Validar token (si es workflow_dispatch)
+      - name: Validar token
         if: github.event_name == 'workflow_dispatch'
         run: |
-          if [ "${{ github.event.inputs.secret_token }}" != "${{ secrets.CRON_SECRET }}" ]; then
+          if [ -n "${{ github.event.inputs.secret_token }}" ] && [ "${{ github.event.inputs.secret_token }}" != "${{ secrets.CRON_SECRET }}" ]; then
             echo "Token inválido" && exit 1
           fi
 
@@ -39,12 +47,14 @@ jobs:
           DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
           DISCORD_WEBHOOK_CS2: ${{ secrets.DISCORD_WEBHOOK_CS2 }}
           DISCORD_WEBHOOK_FACEIT: ${{ secrets.DISCORD_WEBHOOK_FACEIT }}
+          FORCE_SEND: ${{ github.event.inputs.force_send || 'false' }}
         run: node script.js
 
-      - name: Guardar estado (Commit de últimos vistos)
+      - name: Guardar estado
+        if: github.event.inputs.force_send != 'true'
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add last_seen_*.txt
-          git commit -m "chore: actualizar último estado de RSS" || echo "Sin cambios para commitear"
+          git commit -m "chore: actualizar último estado de RSS" || echo "Sin cambios"
           git push
