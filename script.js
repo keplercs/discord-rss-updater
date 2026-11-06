@@ -6,7 +6,7 @@ const DEEPL_API_KEY = process.env.DEEPL_API_KEY;
 const DEEPL_GLOSSARY_ID = 'b08dfba2-a6dd-478b-a6a3-91f74822e466';
 const WEBHOOK_CS2 = process.env.DISCORD_WEBHOOK_CS2;
 const WEBHOOK_FACEIT = process.env.DISCORD_WEBHOOK_FACEIT;
-const FORCE_SEND = process.env.FORCE_SEND === 'true'; // Nuevo parámetro
+const FORCE_SEND = process.env.FORCE_SEND === 'true';
 
 async function sendDiscord(webhookUrl, embed) {
   if (!webhookUrl) {
@@ -37,43 +37,17 @@ function cleanHTML(html, isFaceit = false) {
              (html._ || html['#text'] || html.content || JSON.stringify(html));
   
   if (isFaceit) {
-    // === FORMATO ESPECIAL PARA FACEIT ===
+    // === FORMATO COMPACTO PARA FACEIT ===
     return text
-      // 1. Convertir tags <b>Status:</b> a "Estado:"
-      .replace(/<b>Status:\s*([^<]+)<\/b>/gi, 'Estado: $1')
-      // 2. Convertir <b>Affected components</b> a "Componentes afectados:"
-      .replace(/<b>Affected components<\/b>/gi, 'Componentes afectados:')
-      // 3. Convertir <li> a viñetas con •
-      .replace(/<li>/gi, '\n• ')
-      .replace(/<\/li>/gi, '')
-      // 4. Eliminar resto de etiquetas HTML
-      .replace(/<[^>]+>/g, '')
-      // 5. Decodificar entidades HTML
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      // 6. Reemplazar <br/> por saltos de línea
+      // 1. Traducir y formatear etiquetas específicas
+      .replace(/<b>Status:\s*([^<]+)<\/b>/gi, 'Estado: $1\n')
+      .replace(/<b>Affected components<\/b>/gi, 'Componentes afectados:\n')
+      // 2. Convertir HTML básico a texto
       .replace(/<br\s*\/?>/gi, '\n')
-      // 7. Colapsar saltos de línea múltiples
-      .replace(/\n{3,}/g, '\n\n')  // Máximo doble salto
-      .replace(/\n\s*\n\s*\n/g, '\n\n')
-      // 8. Limpieza final
-      .replace(/^\n+|\n+$/g, '')
-      .trim();
-  } else {
-    // === FORMATO PARA CS2 ===
-    return text
-      // 1. Normalizar saltos de línea
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/p>/gi, '\n')
-      .replace(/<li>/gi, '\n• ')  // Viñetas con •
+      .replace(/<li>/gi, '\n* ') // Viñeta con * (Markdown de Discord)
       .replace(/<\/li>/gi, '')
-      .replace(/<\/ul>/gi, '\n')
-      .replace(/<\/ol>/gi, '\n')
-      // 2. Eliminar etiquetas HTML
+      .replace(/<\/?ul>/gi, '')
+      .replace(/<\/?ol>/gi, '')
       .replace(/<[^>]+>/g, '')
       // 3. Decodificar entidades
       .replace(/&nbsp;/g, ' ')
@@ -82,16 +56,40 @@ function cleanHTML(html, isFaceit = false) {
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
-      // 4. Headers entre corchetes a negrita
+      // 4. COLAPSAR TODOS los saltos de línea a uno solo para el diseño compacto de Faceit
+      .replace(/\n{2,}/g, '\n')
+      .trim();
+  } else {
+    // === FORMATO PARA CS2 ===
+    return text
+      // 1. Convertir HTML básico a texto
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<li>/gi, '\n* ') // Viñeta con * (Markdown de Discord)
+      .replace(/<\/li>/gi, '')
+      .replace(/<\/?ul>/gi, '\n')
+      .replace(/<\/?ol>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      // 2. Decodificar entidades
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      // 3. Headers entre corchetes a negrita: [ JUGABILIDAD ] -> **JUGABILIDAD**
       .replace(/\[\s*([^\]]+?)\s*\]/g, '**$1**\n')
-      // 5. Limpiar guiones huérfanos
-      .replace(/^\s*[-•]\s*$/gm, '')
-      // 6. Colapsar saltos
+      // 4. Limpiar viñetas huérfanas
+      .replace(/^\s*\*\s*$/gm, '')
+      // 5. Normalizar saltos (máximo doble salto para separar secciones)
       .replace(/\n{3,}/g, '\n\n')
-      .replace(/\n\s*\n\s*\n/g, '\n\n')
-      // 7. Asegurar salto antes de viñetas
-      .replace(/([^\n])\n• /g, '$1\n\n• ')
-      // 8. Limpieza final
+      // 6. Asegurar doble salto ANTES de la primera viñeta si sigue a un texto
+      .replace(/([^\n])\n(\* )/g, '$1\n\n$2')
+      // 7. Limpiar triple salto accidental del paso anterior
+      .replace(/\n{3,}/g, '\n\n')
+      // 8. CRÍTICO: Eliminar saltos de línea DOBLES ENTRE viñetas para mantener la lista compacta
+      .replace(/(\n\* [^\n]*)\n{2,}(\* )/g, '$1\n$2')
+      // 9. Limpieza final
       .replace(/^\n+|\n+$/g, '')
       .trim();
   }
@@ -159,7 +157,6 @@ async function processFeed(name, url, webhook, isFaceit = false) {
     
     const currentId = item.guid || item.link;
     
-    // Si FORCE_SEND=true, ignorar el last_seen
     if (currentId === lastSeen && !FORCE_SEND) {
       console.log(`[${name}] Sin novedades (mismo guid)`);
       return;
@@ -167,7 +164,6 @@ async function processFeed(name, url, webhook, isFaceit = false) {
 
     console.log(`[${name}] Procesando: ${item.title}`);
     
-    // Solo actualizar last_seen si no es force send
     if (!FORCE_SEND) {
       fs.writeFileSync(lastSeenFile, currentId);
     }
