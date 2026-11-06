@@ -32,64 +32,61 @@ async function sendDiscord(webhookUrl, embed) {
 function cleanHTML(html, isFaceit = false) {
   if (!html) return '';
   
-  // Extraer texto de objetos RSS si es necesario
   let text = typeof html === 'string' ? html : 
              (html._ || html['#text'] || html.content || JSON.stringify(html));
   
+  // 0. CRÍTICO: Normalizar TODOS los saltos de línea a \n (evita problemas con \r\n de DeepL/Windows)
+  text = text.replace(/\r?\n/g, '\n');
+
   if (isFaceit) {
-    // === FORMATO COMPACTO PARA FACEIT ===
     return text
-      // 1. Traducir y formatear etiquetas específicas
+      // 1. Etiquetas específicas
       .replace(/<b>Status:\s*([^<]+)<\/b>/gi, 'Estado: $1\n')
       .replace(/<b>Affected components<\/b>/gi, 'Componentes afectados:\n')
-      // 2. Convertir HTML básico a texto
+      // 2. HTML básico
       .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<li>/gi, '\n* ') // Viñeta con * (Markdown de Discord)
+      .replace(/<li>/gi, '\n* ')
       .replace(/<\/li>/gi, '')
       .replace(/<\/?ul>/gi, '')
       .replace(/<\/?ol>/gi, '')
       .replace(/<[^>]+>/g, '')
-      // 3. Decodificar entidades
+      // 3. Entidades
       .replace(/&nbsp;/g, ' ')
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
-      // 4. COLAPSAR TODOS los saltos de línea a uno solo para el diseño compacto de Faceit
+      // 4. COLAPSAR TODOS los saltos de línea múltiples a uno solo (diseño compacto)
       .replace(/\n{2,}/g, '\n')
       .trim();
   } else {
-    // === FORMATO PARA CS2 ===
     return text
-      // 1. Convertir HTML básico a texto
+      // 1. HTML básico a saltos de línea
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/p>/gi, '\n')
-      .replace(/<li>/gi, '\n* ') // Viñeta con * (Markdown de Discord)
-      .replace(/<\/li>/gi, '')
+      .replace(/<li>/gi, '\n* ')
+      .replace(/<\/li>/gi, '\n')
       .replace(/<\/?ul>/gi, '\n')
       .replace(/<\/?ol>/gi, '\n')
       .replace(/<[^>]+>/g, '')
-      // 2. Decodificar entidades
+      // 2. Entidades
       .replace(/&nbsp;/g, ' ')
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
-      // 3. Headers entre corchetes a negrita: [ JUGABILIDAD ] -> **JUGABILIDAD**
-      .replace(/\[\s*([^\]]+?)\s*\]/g, '**$1**\n')
-      // 4. Limpiar viñetas huérfanas
+      // 3. Headers: [ JUGABILIDAD ] -> \n\n**JUGABILIDAD**\n\n (Garantiza salto antes y después)
+      .replace(/\[\s*([^\]]+?)\s*\]/g, '\n\n**$1**\n\n')
+      // 4. Limpiar viñetas huérfanas (líneas que son solo "*")
       .replace(/^\s*\*\s*$/gm, '')
-      // 5. Normalizar saltos (máximo doble salto para separar secciones)
+      // 5. Normalizar saltos: máximo doble salto (\n\n) en todo el texto
       .replace(/\n{3,}/g, '\n\n')
-      // 6. Asegurar doble salto ANTES de la primera viñeta si sigue a un texto
-      .replace(/([^\n])\n(\* )/g, '$1\n\n$2')
-      // 7. Limpiar triple salto accidental del paso anterior
-      .replace(/\n{3,}/g, '\n\n')
-      // 8. CRÍTICO: Eliminar saltos de línea DOBLES ENTRE viñetas para mantener la lista compacta
+      // 6. CRÍTICO: Eliminar saltos de línea DOBLES ENTRE viñetas de una misma lista
+      // Busca: (salto + asterisco + texto) seguido de 2+ saltos y otro asterisco
       .replace(/(\n\* [^\n]*)\n{2,}(\* )/g, '$1\n$2')
-      // 9. Limpieza final
+      // 7. Limpieza final de saltos al inicio y final
       .replace(/^\n+|\n+$/g, '')
       .trim();
   }
@@ -178,6 +175,10 @@ async function processFeed(name, url, webhook, isFaceit = false) {
       const translated = await translateFaceitContent(title, description);
       title = translated.title;
       description = translated.description;
+      
+      // GARANTÍA: Forzar formato compacto DESPUÉS de la traducción por si DeepL añade saltos extra (\r\n o \n\n)
+      description = description.replace(/\r?\n{2,}/g, '\n').trim();
+      
       console.log(`[${name}] Traducción completada`);
     }
 
