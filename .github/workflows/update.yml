@@ -7,7 +7,10 @@ on:
         description: 'Token de seguridad para cron-job.org'
         required: true
   schedule:
-    - cron: '*/5 * * * *' # Respaldo nativo cada 5 min
+    - cron: '*/5 * * * *'
+
+permissions:
+  contents: write # <-- Esto permite hacer git push
 
 jobs:
   update:
