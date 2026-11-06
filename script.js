@@ -3,6 +3,7 @@ const parser = new Parser();
 const fs = require('fs');
 
 const DEEPL_API_KEY = process.env.DEEPL_API_KEY;
+const DEEPL_GLOSSARY_ID = 'b08dfba2-a6dd-478b-a6a3-91f74822e466'; // Del blueprint
 const WEBHOOK_CS2 = process.env.DISCORD_WEBHOOK_CS2;
 const WEBHOOK_FACEIT = process.env.DISCORD_WEBHOOK_FACEIT;
 
@@ -18,7 +19,9 @@ async function sendDiscord(webhookUrl, embed) {
       body: JSON.stringify({ embeds: [embed] })
     });
     if (!res.ok) {
-      console.error(`Error al enviar a Discord: ${res.status} ${res.statusText}`);
+      console.error(`Error Discord: ${res.status} ${res.statusText}`);
+    } else {
+      console.log('Mensaje enviado a Discord correctamente');
     }
   } catch (err) {
     console.error('Error enviando a Discord:', err);
@@ -27,46 +30,66 @@ async function sendDiscord(webhookUrl, embed) {
 
 async function cleanHTML(html) {
   if (!html) return '';
-  return html
+  // Si viene como objeto (algunos RSS), extraer texto
+  const text = typeof html === 'object' ? (html._ || html['#text'] || JSON.stringify(html)) : html;
+  return String(text)
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n\n')
     .replace(/<\/li>/gi, '\n- ')
     .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
     .replace(/\n\s*\n\s*\n+/g, '\n\n')
     .trim();
 }
 
-async function translateText(text) {
-  if (!text || !DEEPL_API_KEY) return text;
+// Replica exacta del blueprint: envía "título|||\ndescripción" y hace split después
+async function translateFaceitContent(title, description) {
+  if (!DEEPL_API_KEY) {
+    console.log('Sin DEEPL_API_KEY, omitiendo traducción');
+    return { title, description };
+  }
+  
+  const combinedText = `${title}|||\n${description}`;
+  console.log('Enviando a DeepL:', combinedText.substring(0, 100) + '...');
+  
   try {
     const res = await fetch('https://api-free.deepl.com/v2/translate', {
       method: 'POST',
-      headers: { 
+      headers: {
         'Authorization': `DeepL-Auth-Key ${DEEPL_API_KEY}`,
         'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: new URLSearchParams({ 
-        text: text,
+      body: new URLSearchParams({
+        text: combinedText,
         target_lang: 'ES',
-        source_lang: 'EN'
+        source_lang: 'EN',
+        glossary_id: DEEPL_GLOSSARY_ID,
+        tag_handling: 'html',
+        preserve_formatting: 'true'
       })
     });
     
     if (!res.ok) {
-      console.error(`Error de DeepL: ${res.status} ${res.statusText}`);
-      return text;
+      const errorText = await res.text();
+      console.error(`DeepL error ${res.status}: ${errorText}`);
+      return { title, description };
     }
     
     const data = await res.json();
-    if (!data.translations || !data.translations[0]) {
-      console.error('Respuesta de DeepL inválida:', data);
-      return text;
-    }
+    const translated = data.translations[0].text;
     
-    return data.translations[0].text;
+    // Split igual que Make: {{get(split(3.translations[].text; "|||"); 1)}} y 2
+    const parts = translated.split('|||\n');
+    return {
+      title: parts[0] || title,
+      description: parts[1] || description
+    };
   } catch (err) {
     console.error('Error en traducción:', err);
-    return text;
+    return { title, description };
   }
 }
 
@@ -83,51 +106,47 @@ async function processFeed(name, url, webhook, isFaceit = false) {
       return;
     }
     
-    if (item.guid === lastSeen || item.link === lastSeen) {
-      console.log(`[${name}] Sin novedades.`);
+    const currentId = item.guid || item.link;
+    if (currentId === lastSeen) {
+      console.log(`[${name}] Sin novedades (mismo guid: ${currentId})`);
       return;
     }
 
-    console.log(`[${name}] Nueva actualización detectada.`);
-    fs.writeFileSync(lastSeenFile, item.guid || item.link);
+    console.log(`[${name}] Nueva actualización: ${item.title}`);
+    fs.writeFileSync(lastSeenFile, currentId);
 
     let title = item.title || '';
     let description = cleanHTML(item.content || item.contentSnippet || item.description);
 
-    // Para Faceit, traducir título Y descripción (como en tu blueprint original)
-    if (isFaceit && DEEPL_API_KEY) {
-      console.log(`[${name}] Traduciendo contenido...`);
-      const [translatedTitle, translatedDesc] = await Promise.all([
-        translateText(title),
-        translateText(description)
-      ]);
-      title = translatedTitle;
-      description = translatedDesc;
+    if (isFaceit) {
+      console.log(`[${name}] Traduciendo con glosario...`);
+      const translated = await translateFaceitContent(title, description);
+      title = translated.title;
+      description = translated.description;
     }
 
     const embed = {
       title: title,
+      // SIN url aquí para que el título no sea clickeable (el autor ya tiene el link)
       description: description,
       color: isFaceit ? 16733440 : 2636413,
-      url: item.link,
-      image: { 
-        url: isFaceit 
-          ? 'https://www.faceitstatus.com/og-image.png' 
+      image: {
+        url: isFaceit
+          ? 'https://www.faceitstatus.com/og-image.png'
           : 'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/730/162664aa5da85f418105350c5d67ca565f6c3713/header.jpg'
       },
       author: {
         name: isFaceit ? 'Enlace del incidente' : 'Detalles sobre la actualización',
         url: item.link,
-        icon_url: isFaceit 
-          ? 'https://www.faceitstatus.com/_next/image?url=https%3A%2F%2Fstorage.googleapis.com%2Fincident-io-status-page-logos%2F01GEF2KCCR92BE94Q9GPWW36BM%2Ffaceit%2F8v97t78c.png&w=384&q=75' 
+        icon_url: isFaceit
+          ? 'https://www.faceitstatus.com/_next/image?url=https%3A%2F%2Fstorage.googleapis.com%2Fincident-io-status-page-logos%2F01GEF2KCCR92BE94Q9GPWW36BM%2Ffaceit%2F8v97t78c.png&w=384&q=75'
           : 'https://shared.fastly.steamstatic.com/community_assets/images/apps/730/8dbc71957312bbd3baea65848b545be9eae2a355.jpg'
       }
     };
 
     await sendDiscord(webhook, embed);
-    console.log(`[${name}] Mensaje enviado correctamente`);
   } catch (err) {
-    console.error(`[${name}] Error procesando feed:`, err);
+    console.error(`[${name}] Error:`, err);
   }
 }
 
