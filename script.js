@@ -6,7 +6,7 @@ const DEEPL_API_KEY = process.env.DEEPL_API_KEY;
 const DEEPL_GLOSSARY_ID = 'b08dfba2-a6dd-478b-a6a3-91f74822e466';
 const WEBHOOK_CS2 = process.env.DISCORD_WEBHOOK_CS2;
 const WEBHOOK_FACEIT = process.env.DISCORD_WEBHOOK_FACEIT;
-const FORCE_SEND = process.env.FORCE_SEND === 'true'; // Nuevo parámetro
+const FORCE_SEND = process.env.FORCE_SEND === 'true';
 
 async function sendDiscord(webhookUrl, embed) {
   if (!webhookUrl) {
@@ -31,67 +31,46 @@ async function sendDiscord(webhookUrl, embed) {
 
 function cleanHTML(html, isFaceit = false) {
   if (!html) return '';
-  
-  // Extraer texto de objetos RSS si es necesario
-  let text = typeof html === 'string' ? html : 
-             (html._ || html['#text'] || html.content || JSON.stringify(html));
+  let text = typeof html === 'string' ? html : (html._ || html['#text'] || html.content || JSON.stringify(html));
   
   if (isFaceit) {
-    // === FORMATO ESPECIAL PARA FACEIT ===
+    // Limpieza específica para Faceit: prepara el texto para que DeepL lo traduzca bien
     return text
-      // 1. Convertir tags <b>Status:</b> a "Estado:"
-      .replace(/<b>Status:\s*([^<]+)<\/b>/gi, 'Estado: $1')
-      // 2. Convertir <b>Affected components</b> a "Componentes afectados:"
-      .replace(/<b>Affected components<\/b>/gi, 'Componentes afectados:')
-      // 3. Convertir <li> a viñetas con •
-      .replace(/<li>/gi, '\n• ')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<li>/gi, '\n- ') // Usamos '-' temporalmente para que DeepL lo entienda como lista
       .replace(/<\/li>/gi, '')
-      // 4. Eliminar resto de etiquetas HTML
-      .replace(/<[^>]+>/g, '')
-      // 5. Decodificar entidades HTML
+      .replace(/<\/?ul>/gi, '')
+      .replace(/<\/?ol>/gi, '')
+      .replace(/<[^>]+>/g, '') // Eliminar resto de etiquetas (<b>, etc.)
       .replace(/&nbsp;/g, ' ')
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
-      // 6. Reemplazar <br/> por saltos de línea
-      .replace(/<br\s*\/?>/gi, '\n')
-      // 7. Colapsar saltos de línea múltiples
-      .replace(/\n{3,}/g, '\n\n')  // Máximo doble salto
-      .replace(/\n\s*\n\s*\n/g, '\n\n')
-      // 8. Limpieza final
       .replace(/^\n+|\n+$/g, '')
       .trim();
   } else {
-    // === FORMATO PARA CS2 ===
+    // Limpieza específica para CS2
     return text
-      // 1. Normalizar saltos de línea
       .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/p>/gi, '\n')
-      .replace(/<li>/gi, '\n• ')  // Viñetas con •
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<li>/gi, '\n- ')
       .replace(/<\/li>/gi, '')
-      .replace(/<\/ul>/gi, '\n')
-      .replace(/<\/ol>/gi, '\n')
-      // 2. Eliminar etiquetas HTML
+      .replace(/<\/ul>/gi, '\n\n')
+      .replace(/<\/ol>/gi, '\n\n')
       .replace(/<[^>]+>/g, '')
-      // 3. Decodificar entidades
       .replace(/&nbsp;/g, ' ')
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
-      // 4. Headers entre corchetes a negrita
-      .replace(/\[\s*([^\]]+?)\s*\]/g, '**$1**\n')
-      // 5. Limpiar guiones huérfanos
-      .replace(/^\s*[-•]\s*$/gm, '')
-      // 6. Colapsar saltos
+      .replace(/\[\s*([^\]]+?)\s*\]/g, '**$1**\n') // Headers en negrita
+      .replace(/^\s*-\s*$/gm, '') // Eliminar guiones huérfanos
       .replace(/\n{3,}/g, '\n\n')
-      .replace(/\n\s*\n\s*\n/g, '\n\n')
-      // 7. Asegurar salto antes de viñetas
-      .replace(/([^\n])\n• /g, '$1\n\n• ')
-      // 8. Limpieza final
+      .replace(/([^\n])\n- /g, '$1\n\n- ') // Asegurar salto antes de viñetas
       .replace(/^\n+|\n+$/g, '')
       .trim();
   }
@@ -104,7 +83,6 @@ async function translateFaceitContent(title, description) {
   }
   
   const combinedText = `${title}|||\n${description}`;
-  console.log('Enviando a DeepL (primeros 100 chars):', combinedText.substring(0, 100));
   
   try {
     const res = await fetch('https://api-free.deepl.com/v2/translate', {
@@ -129,8 +107,6 @@ async function translateFaceitContent(title, description) {
     }
     
     const data = await res.json();
-    console.log('Respuesta DeepL recibida');
-    
     const translated = data.translations[0].text;
     const parts = translated.split('|||\n');
     
@@ -158,31 +134,36 @@ async function processFeed(name, url, webhook, isFaceit = false) {
     }
     
     const currentId = item.guid || item.link;
-    
-    // Si FORCE_SEND=true, ignorar el last_seen
     if (currentId === lastSeen && !FORCE_SEND) {
       console.log(`[${name}] Sin novedades (mismo guid)`);
       return;
     }
 
     console.log(`[${name}] Procesando: ${item.title}`);
-    
-    // Solo actualizar last_seen si no es force send
     if (!FORCE_SEND) {
       fs.writeFileSync(lastSeenFile, currentId);
     }
 
     let title = item.title || '';
     let description = cleanHTML(item.content || item.contentSnippet || item.description, isFaceit);
-    
-    console.log(`[${name}] Descripción limpia (primeros 100 chars):`, description.substring(0, 100));
 
     if (isFaceit) {
       console.log(`[${name}] Traduciendo con glosario...`);
       const translated = await translateFaceitContent(title, description);
       title = translated.title;
       description = translated.description;
-      console.log(`[${name}] Traducción completada`);
+      
+      // Formato final específico para Faceit DESPUÉS de la traducción
+      description = description
+        // 1. Asegurar dos puntos después de "Componentes afectados"
+        .replace(/(Componentes afectados)\s*\n/gi, '$1:\n')
+        // 2. Cambiar guiones de lista (- ) por viñetas (• )
+        .replace(/\n-\s/g, '\n• ')
+        // 3. Compactar todo a saltos de línea simples (como en tu ejemplo)
+        .replace(/\n{2,}/g, '\n')
+        .trim();
+        
+      console.log(`[${name}] Traducción y formato completados`);
     }
 
     const embed = {
