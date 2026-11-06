@@ -36,39 +36,65 @@ function cleanHTML(html, isFaceit = false) {
   let text = typeof html === 'string' ? html : 
              (html._ || html['#text'] || html.content || JSON.stringify(html));
   
-  let result = text
-    // 1. Normalizar saltos de línea de etiquetas
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    // 2. Manejar listas diferente según el feed
-    .replace(/<li>/gi, isFaceit ? '\n' : '\n- ')  // Faceit: sin viñetas, CS2: con viñetas
-    .replace(/<\/li>/gi, '')
-    .replace(/<\/ul>/gi, '\n')
-    .replace(/<\/ol>/gi, '\n')
-    
-    // 3. Eliminar resto de etiquetas HTML
-    .replace(/<[^>]+>/g, '')
-    
-    // 4. Decodificar entidades HTML
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
-  
-  // 5. Solo para CS2: formatear headers entre corchetes
-  if (!isFaceit) {
-    result = result.replace(/\[\s*([^\]]+?)\s*\]/g, '**$1**\n');
+  if (isFaceit) {
+    // === FORMATO ESPECIAL PARA FACEIT ===
+    return text
+      // 1. Convertir tags <b>Status:</b> a "Estado:"
+      .replace(/<b>Status:\s*([^<]+)<\/b>/gi, 'Estado: $1')
+      // 2. Convertir <b>Affected components</b> a "Componentes afectados:"
+      .replace(/<b>Affected components<\/b>/gi, 'Componentes afectados:')
+      // 3. Convertir <li> a viñetas con •
+      .replace(/<li>/gi, '\n• ')
+      .replace(/<\/li>/gi, '')
+      // 4. Eliminar resto de etiquetas HTML
+      .replace(/<[^>]+>/g, '')
+      // 5. Decodificar entidades HTML
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      // 6. Reemplazar <br/> por saltos de línea
+      .replace(/<br\s*\/?>/gi, '\n')
+      // 7. Colapsar saltos de línea múltiples
+      .replace(/\n{3,}/g, '\n\n')  // Máximo doble salto
+      .replace(/\n\s*\n\s*\n/g, '\n\n')
+      // 8. Limpieza final
+      .replace(/^\n+|\n+$/g, '')
+      .trim();
+  } else {
+    // === FORMATO PARA CS2 ===
+    return text
+      // 1. Normalizar saltos de línea
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<li>/gi, '\n• ')  // Viñetas con •
+      .replace(/<\/li>/gi, '')
+      .replace(/<\/ul>/gi, '\n')
+      .replace(/<\/ol>/gi, '\n')
+      // 2. Eliminar etiquetas HTML
+      .replace(/<[^>]+>/g, '')
+      // 3. Decodificar entidades
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      // 4. Headers entre corchetes a negrita
+      .replace(/\[\s*([^\]]+?)\s*\]/g, '**$1**\n')
+      // 5. Limpiar guiones huérfanos
+      .replace(/^\s*[-•]\s*$/gm, '')
+      // 6. Colapsar saltos
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/\n\s*\n\s*\n/g, '\n\n')
+      // 7. Asegurar salto antes de viñetas
+      .replace(/([^\n])\n• /g, '$1\n\n• ')
+      // 8. Limpieza final
+      .replace(/^\n+|\n+$/g, '')
+      .trim();
   }
-  
-  // 6. Colapsar saltos de línea excesivos (máximo un salto)
-  result = result
-    .replace(/\n{2,}/g, '\n')  // Todo a salto simple
-    .replace(/^\n+|\n+$/g, '')
-    .trim();
-  
-  return result;
 }
 
 async function translateFaceitContent(title, description) {
