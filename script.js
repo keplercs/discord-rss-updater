@@ -29,48 +29,46 @@ async function sendDiscord(webhookUrl, embed) {
   }
 }
 
-function cleanHTML(html) {
+function cleanHTML(html, isFaceit = false) {
   if (!html) return '';
   
   // Extraer texto de objetos RSS si es necesario
   let text = typeof html === 'string' ? html : 
              (html._ || html['#text'] || html.content || JSON.stringify(html));
   
-  return text
+  let result = text
     // 1. Normalizar saltos de línea de etiquetas
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n\n')
-    .replace(/<li>/gi, '\n- ')  // TODOS los <li> se convierten en viñetas
-    .replace(/<\/li>/gi, '')     // Cerrar li sin añadir nada extra
-    .replace(/<\/ul>/gi, '\n\n')
-    .replace(/<\/ol>/gi, '\n\n')
+    .replace(/<\/p>/gi, '\n')
+    // 2. Manejar listas diferente según el feed
+    .replace(/<li>/gi, isFaceit ? '\n' : '\n- ')  // Faceit: sin viñetas, CS2: con viñetas
+    .replace(/<\/li>/gi, '')
+    .replace(/<\/ul>/gi, '\n')
+    .replace(/<\/ol>/gi, '\n')
     
-    // 2. Eliminar resto de etiquetas HTML
+    // 3. Eliminar resto de etiquetas HTML
     .replace(/<[^>]+>/g, '')
     
-    // 3. Decodificar entidades HTML
+    // 4. Decodificar entidades HTML
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    
-    // 4. Formatear headers entre corchetes: [ JUGABILIDAD ] -> **JUGABILIDAD**
-    .replace(/\[\s*([^\]]+?)\s*\]/g, '**$1**\n')
-    
-    // 5. Limpiar guiones huérfanos
-    .replace(/^\s*-\s*$/gm, '')
-    
-    // 6. Colapsar saltos de línea excesivos
-    .replace(/\n{3,}/g, '\n\n')
-    
-    // 7. Asegurar salto antes de viñetas
-    .replace(/([^\n])\n- /g, '$1\n\n- ')
-    
-    // 8. Limpieza final
+    .replace(/&#39;/g, "'");
+  
+  // 5. Solo para CS2: formatear headers entre corchetes
+  if (!isFaceit) {
+    result = result.replace(/\[\s*([^\]]+?)\s*\]/g, '**$1**\n');
+  }
+  
+  // 6. Colapsar saltos de línea excesivos (máximo un salto)
+  result = result
+    .replace(/\n{2,}/g, '\n')  // Todo a salto simple
     .replace(/^\n+|\n+$/g, '')
     .trim();
+  
+  return result;
 }
 
 async function translateFaceitContent(title, description) {
@@ -149,7 +147,7 @@ async function processFeed(name, url, webhook, isFaceit = false) {
     }
 
     let title = item.title || '';
-    let description = cleanHTML(item.content || item.contentSnippet || item.description);
+    let description = cleanHTML(item.content || item.contentSnippet || item.description, isFaceit);
     
     console.log(`[${name}] Descripción limpia (primeros 100 chars):`, description.substring(0, 100));
 
